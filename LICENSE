@@ -1,0 +1,60 @@
+Dewiar Server Panel Source-Available License, version 1.0
+
+Copyright (c) 2026 Dewiar (dewiar.pro). All rights reserved.
+
+This software and its documentation (the "Software") are made available for
+viewing only. The Software is NOT open source.
+
+1. What you may do without asking
+   You may read the source code and documentation in order to evaluate the
+   Software, to study how it works, and to review its security.
+
+2. What requires prior written permission from the copyright holder
+   a) installing, running or otherwise using the Software, on any server,
+      for any purpose, commercial or not;
+   b) copying or redistributing the Software or any part of it, except for
+      the copies that a code hosting service makes technically necessary to
+      display the repository;
+   c) modifying the Software, or creating works based on it or on any part
+      of it;
+   d) offering the Software, or a service built on it, to third parties;
+   e) removing or changing copyright, license or authorship notices.
+
+   Permission is granted individually, in writing, by the copyright holder.
+   Requests: through the contact details published at https://dewiar.pro
+
+3. Contributions
+   If you send a change, a patch or a suggestion containing code, you grant
+   the copyright holder a perpetual, worldwide, royalty-free, irrevocable
+   right to use, modify and distribute it as part of the Software under any
+   terms.
+
+4. Security reports
+   Reporting a vulnerability to the copyright holder is welcome and is not a
+   breach of this license. Please report privately before any publication.
+
+5. Termination
+   Any use beyond section 1 without permission ends your rights under this
+   license automatically.
+
+6. No warranty
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. THE SOFTWARE MANAGES
+   SERVERS WITH ADMINISTRATOR PRIVILEGES; ANY USE IS AT YOUR OWN RISK.
+
+7. Limitation of liability
+   IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR
+   OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+   ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+--------------------------------------------------------------------------
+
+Кратко по-русски (справочно, юридическую силу имеет английский текст выше)
+
+Код открыт только для просмотра. Без письменного разрешения правообладателя
+нельзя устанавливать и использовать панель, копировать и распространять её,
+изменять код и создавать на его основе свои продукты. Читать код, изучать
+его и проверять безопасность можно свободно. Разрешение на использование
+выдаётся индивидуально: обращайтесь через контакты на сайте dewiar.pro.
+Программа предоставляется «как есть», без каких-либо гарантий.
