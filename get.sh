@@ -33,6 +33,10 @@ if [ -t 0 ]; then
   bash "$SRC/install.sh" "$@"
 elif [ -f /etc/dewiar-panel/config.php ] && [ "${1:-}" != "--reset" ]; then
   bash "$SRC/install.sh" "$@" </dev/null
-else
+elif { : </dev/tty; } 2>/dev/null; then
   bash "$SRC/install.sh" "$@" </dev/tty
+else
+  echo "Файлы загружены в $SRC, но терминал для вопросов установщика недоступен."
+  echo "Запустите установку вручную: bash $SRC/install.sh"
+  exit 1
 fi
