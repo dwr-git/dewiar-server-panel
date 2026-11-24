@@ -62,6 +62,7 @@ install -d -m 755 -o root -g root /var/lib/dewiar-sockets
 
 rm -rf "$APP/public" "$APP/lib"
 cp -r "$SRC/app/public" "$SRC/app/lib" "$APP/"
+cp "$SRC/VERSION" "$APP/VERSION"
 chown -R root:root "$APP"; chmod -R a+rX,go-w "$APP"
 
 install -m 700 -o root -g root "$SRC/helper/helper.php" "$LIB/helper.php"
@@ -79,6 +80,26 @@ if [ "$NEWCFG" = "1" ]; then
 fi
 chown root:"$PUSER" "$ETC/config.php" "$ETC/listen"; chmod 640 "$ETC/config.php" "$ETC/listen"
 
+# Команда dewiar-panel для терминала: обновление, версия, пароль
+cat > /usr/local/sbin/dewiar-panel <<'CLI'
+#!/bin/sh
+REPO="dwr-git/dewiar-server-panel"
+case "${1:-}" in
+  update)   curl -fsSL "https://raw.githubusercontent.com/$REPO/main/get.sh" | bash ;;
+  version)  cat /opt/dewiar-panel/VERSION ;;
+  status)   systemctl status dewiar-panel --no-pager ;;
+  restart)  systemctl restart dewiar-panel && echo "Панель перезапущена." ;;
+  password) curl -fsSL "https://raw.githubusercontent.com/$REPO/main/get.sh" | bash -s -- --reset ;;
+  *) echo "Dewiar Server Panel $(cat /opt/dewiar-panel/VERSION 2>/dev/null)"
+     echo "  dewiar-panel update     обновить до последней версии"
+     echo "  dewiar-panel version    показать установленную версию"
+     echo "  dewiar-panel status     состояние службы панели"
+     echo "  dewiar-panel restart    перезапустить панель"
+     echo "  dewiar-panel password   сменить логин, пароль, адрес или порт" ;;
+esac
+CLI
+chown root:root /usr/local/sbin/dewiar-panel; chmod 755 /usr/local/sbin/dewiar-panel
+
 # 4. Право панели вызывать помощник (и только его)
 TMP="$(mktemp)"
 printf 'Defaults:%s !requiretty\n%s ALL=(root) NOPASSWD: /usr/local/sbin/dewiar-helper\n' "$PUSER" "$PUSER" > "$TMP"
@@ -87,7 +108,8 @@ install -m 440 -o root -g root "$TMP" /etc/sudoers.d/dewiar-panel; rm -f "$TMP"
 
 # 5. acme.sh — клиент Let's Encrypt с автопродлением
 if [ ! -x /root/.acme.sh/acme.sh ]; then
-  read -r -p "E-mail для уведомлений Let's Encrypt: " LE_MAIL
+  LE_MAIL=""
+  if [ -t 0 ]; then read -r -p "E-mail для уведомлений Let's Encrypt: " LE_MAIL; fi
   echo "Устанавливаю acme.sh…"
   T="$(mktemp -d)"
   if curl -fsSL https://github.com/acmesh-official/acme.sh/archive/refs/heads/master.tar.gz | tar xz -C "$T" \
@@ -155,7 +177,8 @@ systemctl restart dewiar-panel
 sleep 1
 if systemctl is-active --quiet dewiar-panel; then
   echo
-  echo "Готово. Панель: http://$LISTEN"
+  echo "Готово. Dewiar Server Panel $(cat "$APP/VERSION"): http://$LISTEN"
+  echo "Обновление в будущем: команда dewiar-panel update или кнопка в разделе «Безопасность»."
   echo "Если включён файрвол, откройте порт только для своей локальной сети."
 else
   echo "Служба не запустилась. Журнал: journalctl -u dewiar-panel -n 30"

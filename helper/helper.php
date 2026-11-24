@@ -1833,6 +1833,19 @@ switch ($cmd) {
     case 'mail-clear-frozen':
         mail_clear_frozen();
         break;
+    case 'panel-update-check':
+        $cur = trim((string) @file_get_contents('/opt/dewiar-panel/VERSION'));
+        run(['curl', '-fsSL', '-m', '8', 'https://raw.githubusercontent.com/dwr-git/dewiar-server-panel/main/VERSION'], $o);
+        $latest = trim((string) $o);
+        echo json_encode(['current' => $cur, 'latest' => preg_match('/^\d+\.\d+\.\d+$/', $latest) ? $latest : null]);
+        break;
+    case 'panel-update':
+        if (!is_executable('/usr/local/sbin/dewiar-panel')) {
+            fail('Команда dewiar-panel не найдена. Обновите панель вручную по инструкции.');
+        }
+        $rc = run(['systemd-run', '--no-block', '--collect', '--unit', 'dewiar-panel-update-' . time(), '/usr/local/sbin/dewiar-panel', 'update'], $o);
+        echo $rc === 0 ? "Обновление запущено. Панель перезапустится сама, обновите страницу через минуту.\n" : "Не удалось запустить обновление:\n$o\n";
+        exit($rc === 0 ? 0 : 1);
     case 'service-reload':
         service_reload((string) ($argv[2] ?? ''));
         break;

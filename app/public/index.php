@@ -76,6 +76,7 @@ if ($page === 'api') {
         'ftp_delete' => ['ftp-delete', $arg],
         'mail_flush' => ['mail-flush'],
         'mail_clear_frozen' => ['mail-clear-frozen'],
+        'panel_update' => ['panel-update'],
         'sec_refresh' => ['sec-refresh'],
         'sec_upgrade' => ['sec-upgrade'],
         'sec_http2_off' => ['sec-http2-off'],
@@ -273,6 +274,10 @@ function page_overview(): void
     ];
 
     ob_start();
+    $pu = helper_json_cached(['panel-update-check'], 21600);
+    if (!empty($pu['data']['latest']) && version_compare($pu['data']['latest'], DSP_VERSION, '>')) {
+        echo '<p class="banner">Доступна новая версия панели: <b>' . e($pu['data']['latest']) . '</b>. <a href="?p=security">Перейти к обновлению</a></p>';
+    }
     echo '<p class="today">' . e($s['host']) . ' · работает ' . e(fmt_uptime($s['uptime'])) . '</p>';
     echo '<div class="tiles">';
     foreach ($tiles as $i => $t) {
@@ -770,13 +775,14 @@ function page_help(): void
   <li><b>Установить обновления</b> обновляет только пакеты nginx, Apache, PHP и OpenSSL. Ваши файлы конфигурации сохраняются. Перед обновлением сделайте дампы баз.</li>
   <li>Если пакет установлен из репозитория FastPanel, обновлений для него может больше не быть. Тогда остаются защитные меры и переход на пакеты из репозитория системы.</li>
   <li>Список известных уязвимостей зашит в версию панели и обновляется вместе с ней. Проверка доступных обновлений работает всегда.</li>
+  <li><b>Обновление панели</b>: когда выходит новая версия, на главной появляется сообщение, а здесь кнопка «Обновить панель». Сайты и настройки при обновлении не затрагиваются. Из терминала то же делает команда <span class="mono">dewiar-panel update</span>.</li>
 </ul></section>
 
 <section class="panel help" id="security"><h2>Доступ к панели</h2>
 <ul>
   <li>Панель работает по HTTP и рассчитана на доступ из локальной сети. Не открывайте её порт в интернет.</li>
   <li>После 5 неверных паролей вход блокируется на 5 минут.</li>
-  <li>Сменить пароль, адрес или порт: по SSH выполните <span class="mono">bash install.sh --reset</span> в папке с установщиком.</li>
+  <li>Сменить логин, пароль, адрес или порт: по SSH выполните <span class="mono">dewiar-panel password</span>.</li>
 </ul></section>
 
 <section class="panel help" id="trouble"><h2>Если что-то не работает</h2>
@@ -788,7 +794,7 @@ function page_help(): void
   <li><b>Не видны базы данных.</b> Пользователь root должен входить в MySQL без пароля или через файл <span class="mono">/root/.my.cnf</span>.</li>
   <li><b>Сертификат вернулся к старому.</b> Возможно, его перезаписала служба FastPanel. Остановите её.</li>
 </ul>
-<p class="muted">Версия панели: <?= DSP_VERSION ?>. Установка и обновление описаны в файле Ustanovka.pdf из архива.</p></section>
+<p class="muted">Версия панели: <?= DSP_VERSION ?>. Установка и обновление описаны в файле Ustanovka.pdf в репозитории проекта.</p></section>
     <?php
     layout('Справка', 'help', (string) ob_get_clean(), 'Как устроена панель и что делает каждая кнопка.');
 }
@@ -891,7 +897,21 @@ function page_security(): void
     }
     echo '</div>';
 
-    echo '<section class="panel" style="margin-top:26px"><h2>Обновления пакетов</h2>';
+    $pu = helper_json_cached(['panel-update-check'], 21600);
+    $latest = $pu['data']['latest'] ?? null;
+    echo '<section class="panel" style="margin-top:26px"><h2>Обновление панели</h2>';
+    if (!$latest) {
+        echo '<p>Установлена версия <b>' . e(DSP_VERSION) . '</b>. <span class="muted">Узнать последнюю версию не удалось: нет доступа к github.com.</span></p>';
+    } elseif (version_compare($latest, DSP_VERSION, '>')) {
+        echo '<p>Установлена версия <b>' . e(DSP_VERSION) . '</b>, доступна <b>' . e($latest) . '</b> <span class="badge warn">Есть обновление</span></p><p>'
+            . action_btn('primary', 'panel_update', '', 'Обновить панель', 'Обновить панель до ' . $latest,
+                'Панель загрузит новую версию и перезапустится. Сайты при этом не затрагиваются. Логин, пароль и все настройки сохраняются. Через минуту обновите страницу.') . '</p>';
+    } else {
+        echo '<p>Установлена версия <b>' . e(DSP_VERSION) . '</b> <span class="badge ok">Последняя</span></p>';
+    }
+    echo '<p class="muted">То же самое из терминала: <span class="mono">dewiar-panel update</span></p></section>';
+
+    echo '<section class="panel"><h2>Обновления пакетов</h2>';
     if (!$d['updates']) {
         echo '<p class="muted">На этом сервере нет apt. Обновления проверяются по SSH средствами системы (yum или dnf).</p>';
     } else {

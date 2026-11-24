@@ -78,6 +78,8 @@ main { padding: 32px 36px 70px 18px; max-width: 1320px; width: 100%; }
 .two .panel { margin-bottom: 0; }
 
 /* Главная: плитки разделов */
+.banner { background: var(--warn-bg); color: var(--warn); padding: 11px 16px; border-radius: 14px; margin: -8px 0 22px; }
+.banner a { color: inherit; text-decoration: underline; font-weight: 600; }
 .today { color: var(--muted); margin: -14px 0 26px; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 26px 14px; margin-bottom: 36px; }
 .tile { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; color: var(--text); }

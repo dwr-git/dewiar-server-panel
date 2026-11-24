@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const DSP_VERSION = '0.6.0';
+define('DSP_VERSION', trim((string) @file_get_contents(__DIR__ . '/../VERSION')) ?: (trim((string) @file_get_contents(__DIR__ . '/../../VERSION')) ?: 'dev'));
 
 function cfg(): array
 {

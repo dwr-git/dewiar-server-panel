@@ -8,7 +8,7 @@
 
 ![Главная страница](docs/home.png)
 
-> **Версия 0.6.0, ранняя.** Панель проверена на тестовом стенде и ещё не прошла проверку
+> **Версия 0.7.0, ранняя.** Панель проверена на тестовом стенде и ещё не прошла проверку
 > на рабочих серверах и независимый аудит безопасности. Она работает с правами администратора
 > сервера, учитывайте это.
 
@@ -58,9 +58,12 @@ Linux с systemd, работающий nginx, PHP 7.4 или новее, дос�
 
 ## Установка
 
-После получения разрешения на использование (см. «Лицензия»):
+После получения разрешения на использование (см. «Лицензия») выполните на сервере под root одну команду:
 
-    bash /root/dewiar-panel/install.sh
+    curl -fsSL https://raw.githubusercontent.com/dwr-git/dewiar-server-panel/main/get.sh | bash
+
+Установщик задаст адрес, порт, логин и пароль, дальше вся работа идёт через веб-интерфейс.
+Обновление: кнопка в разделе «Безопасность» или команда `dewiar-panel update`.
 
 Подробная инструкция по шагам: [Ustanovka.pdf](Ustanovka.pdf).
 
@@ -92,7 +95,7 @@ A web server control panel and an alternative to FASTPANEL for people who have l
 Install it on the same server and it immediately shows the sites, domains and certificates that
 are already configured. Nothing has to be migrated or set up again.
 
-> **Version 0.6.0, early.** The panel has been tested on a test bench. It has not yet been
+> **Version 0.7.0, early.** The panel has been tested on a test bench. It has not yet been
 > proven on production servers and has had no independent security audit. It operates with
 > server administrator privileges, so treat it accordingly.
 
@@ -144,9 +147,12 @@ Linux with systemd, a running nginx, PHP 7.4 or newer, root access over SSH.
 
 ## Installation
 
-After you have received permission to use the panel (see "License"):
+After you have received permission to use the panel (see "License"), run one command on the server as root:
 
-    bash /root/dewiar-panel/install.sh
+    curl -fsSL https://raw.githubusercontent.com/dwr-git/dewiar-server-panel/main/get.sh | bash
+
+The installer asks for the address, port, login and password; everything else happens in the web interface.
+To update, use the button in the "Security" section or run `dewiar-panel update`.
 
 Step-by-step guide (in Russian): [Ustanovka.pdf](Ustanovka.pdf).
 
