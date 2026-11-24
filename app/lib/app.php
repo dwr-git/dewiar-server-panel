@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const DSP_VERSION = '0.5.0';
+const DSP_VERSION = '0.6.0';
 
 function cfg(): array
 {

@@ -17,6 +17,12 @@ const ICONS = [
     'server' => ['<rect x="7" y="8" width="34" height="13" rx="5"/><rect x="7" y="27" width="34" height="13" rx="5"/>', '<rect x="7" y="8" width="34" height="13" rx="5"/><rect x="7" y="27" width="34" height="13" rx="5"/><path d="M14 14.5h.1M14 33.5h.1"/><path d="M22 14.5h12M22 33.5h12"/>'],
     'chart' => ['<path d="M14 32l7-9 6 5 10-14v24H14z"/>', '<path d="M9 8v28a3 3 0 0 0 3 3h28"/><path d="M14 32l7-9 6 5 10-14"/>'],
     'update' => ['<circle cx="24" cy="24" r="9"/>', '<path d="M38.5 20A15 15 0 0 0 11 17"/><path d="M10 8v9h9"/><path d="M9.5 28A15 15 0 0 0 37 31"/><path d="M38 40v-9h-9"/>'],
+    'backup' => ['<rect x="8" y="18" width="32" height="22" rx="5"/>', '<rect x="6" y="8" width="36" height="10" rx="4"/><path d="M9 18v17a5 5 0 0 0 5 5h20a5 5 0 0 0 5-5V18"/><path d="M19 27h10"/>'],
+    'cron' => ['<circle cx="24" cy="24" r="17"/>', '<circle cx="24" cy="24" r="17"/><path d="M24 13v11l7 5"/>'],
+    'ftp' => ['<path d="M6 14a4 4 0 0 1 4-4h8l4 5h16a4 4 0 0 1 4 4v15a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z"/>', '<path d="M6 14a4 4 0 0 1 4-4h8l4 5h16a4 4 0 0 1 4 4v15a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z"/><path d="M19 32v-9M15.5 26.5L19 23l3.5 3.5M29 23v9M25.500 28.500L29 32l3.500-3.500"/>'],
+    'mail' => ['<rect x="6" y="11" width="36" height="26" rx="6"/>', '<rect x="6" y="11" width="36" height="26" rx="6"/><path d="M8 15l16 12 16-12"/>'],
+    'dns' => ['<circle cx="24" cy="24" r="17"/>', '<circle cx="24" cy="24" r="17"/><ellipse cx="24" cy="24" rx="7.5" ry="17"/><path d="M7 24h34M10 15h28M10 33h28"/>'],
+    'exit' => ['', '<path d="M20 8h-7a5 5 0 0 0-5 5v22a5 5 0 0 0 5 5h7"/><path d="M19 24h21M32 16l8 8-8 8"/>'],
     'help' => ['<circle cx="24" cy="24" r="17"/>', '<circle cx="24" cy="24" r="17"/><path d="M19 19.5a5 5 0 1 1 7.3 4.4c-1.6.9-2.3 1.9-2.3 3.6"/><path d="M24 33.5h.1"/>'],
 ];
 

@@ -8,7 +8,7 @@
 
 ![Главная страница](docs/home.png)
 
-> **Версия 0.5.0, ранняя.** Панель проверена на тестовом стенде и ещё не прошла проверку
+> **Версия 0.6.0, ранняя.** Панель проверена на тестовом стенде и ещё не прошла проверку
 > на рабочих серверах и независимый аудит безопасности. Она работает с правами администратора
 > сервера, учитывайте это.
 
@@ -28,7 +28,12 @@
 | Новый сайт | PHP (отдельный пользователь и пул PHP-FPM), статический сайт, прокси на приложение |
 | Конфигурация | Редактор файлов nginx и Apache с проверкой перед применением и автоматическим откатом |
 | PHP | Смена версии одной кнопкой для сайтов, созданных в панели |
-| Базы данных | Список баз MySQL и MariaDB, дампы, скачивание |
+| Базы данных | Список баз MySQL и MariaDB, дампы, скачивание, восстановление из дампа |
+| Резервные копии | Ежедневные копии файлов сайтов и баз по расписанию, срок хранения, скачивание |
+| Планировщик | Задания cron: добавление и удаление, просмотр остальных заданий сервера |
+| FTP | Аккаунты ProFTPD, привязанные к каталогу одного сайта |
+| Почта | Состояние Exim или Postfix, очередь писем, список ящиков |
+| DNS | Проверка записей доменов: адрес, серверы имён, MX, SPF, DMARC |
 | Службы | Состояние, перезапуск, перечитывание конфигурации, перезагрузка сервера |
 | Графики | Процессор, память, нагрузка и сеть за час, сутки и неделю |
 | Безопасность | Сверка версий nginx, Apache и PHP с исправлениями уязвимостей, обновления, защитные меры |
@@ -36,9 +41,9 @@
 
 ## Чего пока нет
 
-Почта, DNS-зоны, FTP-аккаунты, cron, бэкапы по расписанию, файловый менеджер, файрвол.
-Эти службы на сервере продолжают работать как раньше, но управлять ими из панели пока нельзя.
-Они в плане разработки.
+Создание и удаление почтовых ящиков, редактирование DNS-зон на сервере, выгрузка копий во внешнее
+хранилище, файловый менеджер, файрвол. Почта и DNS пока доступны для просмотра и диагностики.
+Эти службы на сервере продолжают работать как раньше. Недостающее в плане разработки.
 
 ## Как это устроено
 
@@ -70,6 +75,10 @@ Linux с systemd, работающий nginx, PHP 7.4 или новее, дос�
 Запросы на использование и сообщения об уязвимостях: через контакты на https://dewiar.pro.
 Об уязвимостях, пожалуйста, сообщайте лично, до публикации.
 
+## Автор
+
+Исаев Михаил Петрович, Dewiar. Код написан при участии ИИ-ассистента Claude (Anthropic).
+
 Dewiar Server Panel — самостоятельная разработка. Она не содержит кода FASTPANEL и не связана
 с его разработчиками. FASTPANEL — товарный знак его правообладателя.
 
@@ -83,7 +92,7 @@ A web server control panel and an alternative to FASTPANEL for people who have l
 Install it on the same server and it immediately shows the sites, domains and certificates that
 are already configured. Nothing has to be migrated or set up again.
 
-> **Version 0.5.0, early.** The panel has been tested on a test bench. It has not yet been
+> **Version 0.6.0, early.** The panel has been tested on a test bench. It has not yet been
 > proven on production servers and has had no independent security audit. It operates with
 > server administrator privileges, so treat it accordingly.
 
@@ -103,7 +112,12 @@ external license server: if our website disappears, your panel keeps working.
 | New site | PHP (own system user and PHP-FPM pool), static site, reverse proxy to an application |
 | Configuration | Editor for nginx and Apache files with a syntax check before applying and automatic rollback |
 | PHP | One-click version switch for sites created in the panel |
-| Databases | MySQL and MariaDB database list, dumps, download |
+| Databases | MySQL and MariaDB database list, dumps, download, restore from a dump |
+| Backups | Daily scheduled backups of site files and databases, retention, download |
+| Scheduler | Cron jobs: add and delete, read-only view of the server's other jobs |
+| FTP | ProFTPD accounts confined to a single site directory |
+| Mail | Exim or Postfix status, mail queue, mailbox list |
+| DNS | Domain record checks: address, name servers, MX, SPF, DMARC |
 | Services | Status, restart, configuration reload, server reboot |
 | Charts | CPU, memory, load and network for the last hour, day and week |
 | Security | nginx, Apache and PHP versions checked against vulnerability fixes, updates, mitigations |
@@ -113,9 +127,9 @@ The interface is currently in Russian.
 
 ## Not there yet
 
-Mail, DNS zones, FTP accounts, cron, scheduled backups, file manager, firewall.
-These services keep running on the server as before, but cannot be managed from the panel yet.
-They are on the roadmap.
+Creating and deleting mailboxes, editing DNS zones on the server, uploading backups to external
+storage, file manager, firewall. Mail and DNS are currently view-and-diagnose only.
+These services keep running on the server as before. The missing parts are on the roadmap.
 
 ## How it works
 
@@ -144,6 +158,10 @@ copyright holder. Full text: [LICENSE](LICENSE).
 
 Usage requests and vulnerability reports: through the contacts at https://dewiar.pro.
 Please report vulnerabilities privately before publishing them.
+
+## Author
+
+Mikhail Petrovich Isaev, Dewiar. The code was written with the help of the Claude AI assistant (Anthropic).
 
 Dewiar Server Panel is an independent project. It contains no FASTPANEL code and is not
 affiliated with its developers. FASTPANEL is a trademark of its owner.

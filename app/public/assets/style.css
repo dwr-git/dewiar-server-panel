@@ -35,15 +35,19 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
 .intro { color: var(--muted); margin: -12px 0 22px; max-width: 780px; }
 
 /* Боковое меню */
-.side { padding: 26px 18px; display: flex; flex-direction: column; gap: 26px; position: sticky; top: 0; height: 100vh; }
+.side { padding: 24px 18px 18px; display: flex; flex-direction: column; gap: 20px; position: sticky; top: 0; height: 100vh; }
 .brand { font-weight: 700; display: flex; align-items: center; gap: 12px; letter-spacing: -0.01em; font-size: 1.05rem; }
 .brand-mark { width: 38px; height: 38px; border-radius: 12px; background: var(--bg); box-shadow: var(--up-sm); color: var(--accent); display: grid; place-items: center; font-weight: 800; }
-.side nav { display: flex; flex-direction: column; gap: 10px; }
-.side nav a { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 14px; color: var(--text); font-weight: 500; }
+.side nav { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; flex: 1; margin: 0 -8px; padding: 4px 8px; }
+.nav-group { font-size: .72rem; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 14px 14px 4px; }
+.side nav a { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-radius: 13px; color: var(--text); font-weight: 500; font-size: .95rem; }
 .side nav a:hover { box-shadow: var(--up-sm); text-decoration: none; }
 .side nav a.on { box-shadow: var(--down); color: var(--accent-dark); font-weight: 650; }
-.logout { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: .9rem; color: var(--muted); }
-.ver { font-size: .78rem; color: var(--muted); }
+.user { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; box-shadow: var(--up-sm); }
+.avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: var(--accent-dark); box-shadow: var(--down); flex: none; }
+.user-name { flex: 1; min-width: 0; font-weight: 600; font-size: .92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-name small { display: block; font-weight: 400; font-size: .76rem; color: var(--muted); }
+.icon-btn { padding: 8px; border-radius: 11px; display: grid; place-items: center; }
 
 main { padding: 32px 36px 70px 18px; max-width: 1320px; width: 100%; }
 
@@ -169,6 +173,16 @@ legend { font-size: .9rem; font-weight: 550; padding: 0; margin-bottom: 9px; }
 .plain li { padding: 6px 0; border-top: 1px solid #d8dee7; }
 .plain li:first-child { border-top: 0; }
 
+.form.wide { max-width: 900px; }
+.form .inline { margin: 0; align-items: flex-end; }
+.form .inline label { flex: 1; min-width: 160px; }
+details.panel summary { cursor: pointer; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; list-style: none; }
+details.panel summary::-webkit-details-marker { display: none; }
+details.panel summary::before { content: "›"; font-size: 1.3rem; color: var(--muted); transition: transform .15s; }
+details.panel[open] summary::before { transform: rotate(90deg); }
+details.panel[open] summary { margin-bottom: 14px; }
+.chips.big span { font-size: .88rem; padding: 5px 12px; color: var(--text); }
+
 /* Таблицы */
 table { width: 100%; border-collapse: collapse; }
 th { text-align: left; font-weight: 600; color: var(--muted); font-size: .85rem; padding: 6px 8px 10px; }
@@ -202,8 +216,9 @@ dialog pre { box-shadow: var(--down); border-radius: 14px; padding: 12px; max-he
   body { grid-template-columns: 1fr; }
   .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 14px; padding: 16px; }
   .side nav { flex-direction: row; flex-wrap: wrap; }
-  .logout { margin: 0 0 0 auto; }
-  .ver { display: none; }
+  .side nav { flex: none; }
+  .nav-group { display: none; }
+  .user { margin-left: auto; }
   main { padding: 16px 16px 40px; }
   .cards, .charts { grid-template-columns: 1fr; }
 }

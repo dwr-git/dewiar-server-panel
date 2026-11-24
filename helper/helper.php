@@ -1255,6 +1255,474 @@ function sec_apache_http2_off(): void
     exit($rc === 0 ? 0 : 1);
 }
 
+/* ---------- Резервные копии по расписанию ---------- */
+
+const AUTO_DIR   = '/var/backups/dewiar-panel/auto';
+const BACKUP_CFG = '/etc/dewiar-panel/backup.json';
+const UNIT_DIR   = '/etc/systemd/system';
+const SET_RE     = '/^\d{8}-\d{4}$/';
+const BFILE_RE   = '/^(site|db)-[A-Za-z0-9_.\-]{1,100}\.(tar|sql)\.gz$/';
+
+function backup_cfg(): array
+{
+    $c = json_decode((string) @file_get_contents(BACKUP_CFG), true);
+    return (is_array($c) ? $c : []) + ['enabled' => false, 'hour' => 3, 'keep_days' => 7, 'files' => true, 'db' => true];
+}
+
+function backup_config_save(): void
+{
+    $in = json_decode((string) stream_get_contents(STDIN), true) ?: [];
+    $c = ['enabled' => !empty($in['enabled']), 'hour' => max(0, min(23, (int) ($in['hour'] ?? 3))),
+        'keep_days' => max(1, min(90, (int) ($in['keep_days'] ?? 7))), 'files' => !empty($in['files']), 'db' => !empty($in['db'])];
+    if (!$c['files'] && !$c['db']) {
+        fail('Выберите, что сохранять: файлы сайтов, базы данных или и то и другое.');
+    }
+    file_put_contents(BACKUP_CFG, json_encode($c));
+    file_put_contents(UNIT_DIR . '/dewiar-backup.timer', "[Unit]\nDescription=Dewiar Server Panel: резервные копии по расписанию\n\n[Timer]\nOnCalendar=*-*-* "
+        . sprintf('%02d', $c['hour']) . ":10:00\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n");
+    run(['systemctl', 'daemon-reload'], $o);
+    run(['systemctl', $c['enabled'] ? 'enable' : 'disable', '--now', 'dewiar-backup.timer'], $o);
+    echo $c['enabled'] ? 'Расписание включено: каждый день в ' . sprintf('%02d', $c['hour']) . ":10, копии хранятся {$c['keep_days']} дн.\n" : "Расписание выключено. Готовые копии сохранены.\n";
+    exit(0);
+}
+
+function mysqldump_to(string $name, string $path, ?string &$err): bool
+{
+    $bin = which(['mariadb-dump', 'mysqldump']);
+    if (!$bin) {
+        $err = 'mysqldump не найден';
+        return false;
+    }
+    $p = proc_open([$bin, '--single-transaction', '--quick', '--routines', '--triggers', '--events', $name],
+        [0 => ['file', '/dev/null', 'r'], 1 => ['file', $path, 'w'], 2 => ['pipe', 'w']], $pipes);
+    $err = is_resource($p) ? trim((string) stream_get_contents($pipes[2])) : 'не удалось запустить';
+    if ((is_resource($p) ? proc_close($p) : 127) !== 0 || run(['gzip', '-f', $path], $o) !== 0) {
+        @unlink($path);
+        return false;
+    }
+    chmod($path . '.gz', 0600);
+    return true;
+}
+
+function db_names_soft(): array
+{
+    $bin = which(['mariadb', 'mysql']);
+    if (!$bin || run([$bin, '-N', '-B', '-e', 'SHOW DATABASES'], $out) !== 0) {
+        return [];
+    }
+    return array_values(array_filter(array_map('trim', explode("\n", (string) $out)), function ($n) {
+        return preg_match(DB_RE, $n) && !in_array($n, ['information_schema', 'performance_schema', 'mysql', 'sys'], true);
+    }));
+}
+
+function backup_run(): void
+{
+    $c = backup_cfg();
+    if (!is_dir(AUTO_DIR)) {
+        mkdir(AUTO_DIR, 0700, true);
+    }
+    $total = (float) disk_total_space(AUTO_DIR);
+    if ($total > 0 && disk_free_space(AUTO_DIR) / $total < 0.05) {
+        fail('На диске меньше 5% свободного места, копия не создана. Удалите старые копии или освободите место.');
+    }
+    $dir = AUTO_DIR . '/' . date('Ymd-Hi');
+    @mkdir($dir, 0700);
+    $log = ['Начало: ' . date('d.m.Y H:i:s')];
+    if ($c['files']) {
+        $seen = [];
+        foreach (load_sites(false) as $s) {
+            $root = $s['root'] ? realpath($s['root']) : false;
+            if (!$root || !is_dir($root) || substr_count($root, '/') < 2 || isset($seen[$root])) {
+                continue;
+            }
+            $seen[$root] = true;
+            $out = "$dir/site-{$s['domain']}.tar.gz";
+            $rc = run(['tar', '-czf', $out, '--warning=no-file-changed', '-C', dirname($root), basename($root)], $o);
+            if ($rc > 1) {
+                @unlink($out);
+                $log[] = "ОШИБКА  сайт {$s['domain']}: " . trim((string) $o);
+            } else {
+                chmod($out, 0600);
+                $log[] = "готово  сайт {$s['domain']} (" . number_format(filesize($out) / 1048576, 1, ',', ' ') . ' МБ)';
+            }
+        }
+    }
+    if ($c['db']) {
+        foreach (db_names_soft() as $name) {
+            $log[] = mysqldump_to($name, "$dir/db-$name.sql", $err)
+                ? "готово  база $name (" . number_format(filesize("$dir/db-$name.sql.gz") / 1048576, 1, ',', ' ') . ' МБ)'
+                : "ОШИБКА  база $name: $err";
+        }
+    }
+    $limit = time() - $c['keep_days'] * 86400;
+    foreach (scandir(AUTO_DIR) as $d) {
+        if (preg_match(SET_RE, $d) && filemtime(AUTO_DIR . "/$d") < $limit) {
+            run(['rm', '-rf', AUTO_DIR . "/$d"], $o);
+            $log[] = "удалена старая копия $d";
+        }
+    }
+    $log[] = 'Конец: ' . date('d.m.Y H:i:s');
+    file_put_contents("$dir/run.log", implode("\n", $log) . "\n");
+    echo implode("\n", $log), "\n";
+    exit(0);
+}
+
+function backups_list(): array
+{
+    $sets = [];
+    foreach (is_dir(AUTO_DIR) ? scandir(AUTO_DIR) : [] as $d) {
+        if (!preg_match(SET_RE, $d)) {
+            continue;
+        }
+        $files = [];
+        $size = 0;
+        foreach (scandir(AUTO_DIR . "/$d") as $f) {
+            if (preg_match(BFILE_RE, $f)) {
+                $sz = filesize(AUTO_DIR . "/$d/$f");
+                $files[] = ['name' => $f, 'size' => $sz];
+                $size += $sz;
+            }
+        }
+        $log = (string) @file_get_contents(AUTO_DIR . "/$d/run.log");
+        $sets[] = ['id' => $d, 'time' => filemtime(AUTO_DIR . "/$d"), 'size' => $size, 'files' => $files,
+            'errors' => substr_count($log, 'ОШИБКА'), 'done' => strpos($log, 'Конец:') !== false];
+    }
+    usort($sets, function ($a, $b) {
+        return strcmp($b['id'], $a['id']);
+    });
+    run(['systemctl', 'is-active', 'dewiar-backup.service'], $act);
+    return ['cfg' => backup_cfg(), 'sets' => $sets, 'running' => trim((string) $act) === 'activating',
+        'free' => (float) @disk_free_space(is_dir(AUTO_DIR) ? AUTO_DIR : '/')];
+}
+
+function backup_path(string $id, string $file): string
+{
+    if (!preg_match(SET_RE, $id) || !preg_match(BFILE_RE, $file) || !is_file(AUTO_DIR . "/$id/$file")) {
+        fail('Файл резервной копии не найден');
+    }
+    return AUTO_DIR . "/$id/$file";
+}
+
+/** Восстановление базы из дампа. Источник: "dump:ФАЙЛ" (ручной дамп) или "auto:НАБОР/ФАЙЛ". */
+function db_restore(string $spec): void
+{
+    if (preg_match('~^dump:([^/]+)$~', $spec, $m) && preg_match('/^(.+)-\d{8}-\d{6}\.sql\.gz$/', $m[1], $n)) {
+        $path = dump_path($m[1]);
+        $db = $n[1];
+    } elseif (preg_match('~^auto:([^/]+)/(db-(.+)\.sql\.gz)$~', $spec, $m)) {
+        $path = backup_path($m[1], $m[2]);
+        $db = $m[3];
+    } else {
+        fail('Неизвестный источник для восстановления');
+    }
+    if (!preg_match(DB_RE, $db) || !in_array($db, db_names_soft(), true)) {
+        fail("База $db на сервере не найдена. Создайте пустую базу с этим именем и повторите.");
+    }
+    if (!is_dir(DUMP_DIR)) {
+        mkdir(DUMP_DIR, 0700, true);
+    }
+    $pre = DUMP_DIR . "/$db-" . date('Ymd-His') . '.sql';
+    if (!mysqldump_to($db, $pre, $err)) {
+        fail("Не удалось сохранить текущее состояние базы, восстановление отменено:\n$err");
+    }
+    echo 'Текущее состояние сохранено: ', basename($pre), ".gz\n";
+    $rc = run(['bash', '-c', 'set -o pipefail; gzip -dc "$1" | "$2" "$3"', 'restore', $path, (string) which(['mariadb', 'mysql']), $db], $out);
+    if ($rc !== 0) {
+        fail("Восстановление завершилось с ошибкой:\n$out\nВернуть прежнее состояние можно из дампа " . basename($pre) . '.gz');
+    }
+    echo "База $db восстановлена из копии.\n";
+    exit(0);
+}
+
+/* ---------- Планировщик (cron) ---------- */
+
+const CRON_FILE = '/etc/cron.d/dewiar-panel';
+const CRON_DIRS = ['/etc/cron.d', '/var/spool/cron/crontabs', '/var/spool/cron'];
+
+function cron_read(): array
+{
+    $jobs = [];
+    $meta = null;
+    foreach (@file(CRON_FILE, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
+        if (preg_match('/^# dewiar:([a-f0-9]{8}):(.*)$/', $line, $m)) {
+            $meta = [$m[1], (string) base64_decode($m[2])];
+        } elseif ($meta && preg_match('/^(\S+\s+\S+\s+\S+\s+\S+\s+\S+|@\w+)\s+(\S+)\s+(.+)$/', $line, $m)) {
+            $jobs[] = ['id' => $meta[0], 'comment' => $meta[1], 'schedule' => $m[1], 'user' => $m[2], 'command' => $m[3]];
+            $meta = null;
+        }
+    }
+    return $jobs;
+}
+
+function cron_write(array $jobs): void
+{
+    $t = "# Dewiar Server Panel. Файл управляется панелью, вручную не редактируйте.\nSHELL=/bin/sh\nPATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n";
+    foreach ($jobs as $j) {
+        $t .= '# dewiar:' . $j['id'] . ':' . base64_encode($j['comment']) . "\n{$j['schedule']} {$j['user']} {$j['command']}\n";
+    }
+    file_put_contents(CRON_FILE, $t);
+    chmod(CRON_FILE, 0644);
+}
+
+function cron_list(): array
+{
+    $other = [];
+    $files = is_file('/etc/crontab') ? ['/etc/crontab'] : [];
+    foreach (CRON_DIRS as $d) {
+        foreach (is_dir($d) ? scandir($d) : [] as $f) {
+            if ($f[0] !== '.' && is_file("$d/$f") && "$d/$f" !== CRON_FILE) {
+                $files[] = "$d/$f";
+            }
+        }
+    }
+    foreach (array_unique($files) as $f) {
+        foreach (@file($f, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
+            $line = trim($line);
+            if ($line !== '' && $line[0] !== '#' && !preg_match('/^[A-Z_]+\s*=/', $line)) {
+                $other[] = ['source' => $f, 'line' => $line];
+            }
+        }
+    }
+    $users = ['root'];
+    foreach (@file('/etc/passwd', FILE_IGNORE_NEW_LINES) ?: [] as $l) {
+        $c = explode(':', $l);
+        if (count($c) >= 7 && (int) $c[2] >= 1000 && $c[0] !== 'nobody') {
+            $users[] = $c[0];
+        }
+    }
+    foreach (['www-data', 'nginx'] as $u) {
+        if (function_exists('posix_getpwnam') && posix_getpwnam($u)) {
+            $users[] = $u;
+        }
+    }
+    return ['own' => cron_read(), 'other' => array_slice($other, 0, 300), 'users' => array_values(array_unique($users))];
+}
+
+function cron_add(): void
+{
+    $in = json_decode((string) stream_get_contents(STDIN), true) ?: [];
+    $sch = trim((string) ($in['schedule'] ?? ''));
+    $user = trim((string) ($in['user'] ?? ''));
+    $cmd = trim((string) ($in['command'] ?? ''));
+    $comment = trim(preg_replace('/[\r\n]+/', ' ', (string) ($in['comment'] ?? '')));
+    if (!preg_match('/^(@(hourly|daily|weekly|monthly|reboot)|([0-9*\/,\-]+\s+){4}[0-9*\/,\-]+)$/', $sch)) {
+        fail('Расписание должно состоять из пяти полей cron, например: */5 * * * *  или @daily');
+    }
+    if (!preg_match('/^[a-z_][a-z0-9_\-]{0,31}$/', $user) || !function_exists('posix_getpwnam') || !posix_getpwnam($user)) {
+        fail('Пользователь не найден на сервере');
+    }
+    if ($cmd === '' || strlen($cmd) > 1000 || preg_match('/[\r\n\0]/', $cmd)) {
+        fail('Команда должна быть в одну строку, не длиннее 1000 символов');
+    }
+    $jobs = cron_read();
+    $jobs[] = ['id' => bin2hex(random_bytes(4)), 'comment' => mb_substr($comment, 0, 120), 'schedule' => preg_replace('/\s+/', ' ', $sch), 'user' => $user, 'command' => $cmd];
+    cron_write($jobs);
+    echo "Задание добавлено. Cron подхватит его в течение минуты.\n";
+    exit(0);
+}
+
+function cron_delete(string $id): void
+{
+    $jobs = cron_read();
+    $left = array_values(array_filter($jobs, function ($j) use ($id) {
+        return $j['id'] !== $id;
+    }));
+    if (count($left) === count($jobs)) {
+        fail('Задание не найдено');
+    }
+    cron_write($left);
+    echo "Задание удалено.\n";
+    exit(0);
+}
+
+/* ---------- FTP-аккаунты (ProFTPD, файл виртуальных пользователей) ---------- */
+
+const FTP_PASSWD = '/etc/dewiar-panel/ftpd.passwd';
+const FTP_CONF   = '/etc/proftpd/proftpd.conf';
+const FTP_SNIP   = '/etc/proftpd/conf.d/dewiar-panel.conf';
+
+function pftp_read(): array
+{
+    $acc = [];
+    foreach (@file(FTP_PASSWD, FILE_IGNORE_NEW_LINES) ?: [] as $l) {
+        $c = explode(':', $l);
+        if (count($c) >= 7) {
+            $acc[$c[0]] = $c;
+        }
+    }
+    return $acc;
+}
+
+function pftp_write(array $acc): void
+{
+    $t = '';
+    foreach ($acc as $c) {
+        $t .= implode(':', $c) . "\n";
+    }
+    file_put_contents(FTP_PASSWD, $t);
+    chmod(FTP_PASSWD, 0600);
+}
+
+function pftp_info(): array
+{
+    $server = which(['proftpd']) ? 'proftpd' : (which(['vsftpd']) ? 'vsftpd' : (which(['pure-ftpd']) ? 'pure-ftpd' : null));
+    $conf = (string) @file_get_contents(FTP_CONF);
+    $acc = [];
+    foreach (pftp_read() as $c) {
+        $acc[] = ['login' => $c[0], 'home' => $c[5]];
+    }
+    $sites = [];
+    foreach (load_sites(false) as $s) {
+        if ($s['root'] && is_dir($s['root'])) {
+            $sites[] = ['domain' => $s['domain'], 'root' => $s['root']];
+        }
+    }
+    return ['server' => $server, 'confd' => (bool) preg_match('~^\s*Include\s+' . preg_quote(dirname(FTP_SNIP), '~') . '~mi', $conf),
+        'accounts' => $acc, 'sites' => $sites];
+}
+
+function pftp_apply(): void
+{
+    if (!is_file(FTP_SNIP)) {
+        file_put_contents(FTP_SNIP, "# Dewiar Server Panel: FTP-аккаунты, созданные в панели\nAuthUserFile " . FTP_PASSWD . "\nDefaultRoot ~\n");
+        if (run(['proftpd', '-t'], $out) !== 0) {
+            unlink(FTP_SNIP);
+            fail("ProFTPD не принял настройки, изменения отменены:\n$out");
+        }
+    }
+    run(['systemctl', 'reload', 'proftpd'], $o) === 0 || run(['systemctl', 'restart', 'proftpd'], $o);
+}
+
+function pftp_check_pass(string $pass): string
+{
+    if (strlen($pass) < 10 || strlen($pass) > 100 || preg_match('/[\r\n:]/', $pass)) {
+        fail('Пароль должен быть от 10 символов и не содержать двоеточий');
+    }
+    return crypt($pass, '$6$' . substr(strtr(base64_encode(random_bytes(12)), '+', '.'), 0, 16) . '$');
+}
+
+function pftp_add(): void
+{
+    $in = json_decode((string) stream_get_contents(STDIN), true) ?: [];
+    $info = pftp_info();
+    if ($info['server'] !== 'proftpd' || !$info['confd']) {
+        fail('Создание аккаунтов поддерживается для ProFTPD с подключённым каталогом ' . dirname(FTP_SNIP) . '.');
+    }
+    $login = strtolower(trim((string) ($in['login'] ?? '')));
+    if (!preg_match('/^[a-z][a-z0-9_\-]{2,31}$/', $login)) {
+        fail('Логин: латинские буквы, цифры, дефис и подчёркивание, от 3 до 32 символов, начинается с буквы');
+    }
+    $acc = pftp_read();
+    if (isset($acc[$login]) || (function_exists('posix_getpwnam') && posix_getpwnam($login))) {
+        fail('Такой логин уже занят');
+    }
+    $root = null;
+    foreach ($info['sites'] as $s) {
+        if ($s['domain'] === ($in['domain'] ?? '')) {
+            $root = realpath($s['root']);
+        }
+    }
+    if (!$root) {
+        fail('Выберите сайт из списка');
+    }
+    $uid = fileowner($root);
+    $gid = filegroup($root);
+    if ($uid === 0) {
+        fail('Каталог сайта принадлежит root. FTP-доступ к такому каталогу не выдаётся: смените владельца каталога.');
+    }
+    $hash = pftp_check_pass((string) ($in['password'] ?? ''));
+    $shells = array_filter(array_map('trim', @file('/etc/shells') ?: []), function ($l) {
+        return $l !== '' && $l[0] === '/';
+    });
+    $acc[$login] = [$login, $hash, $uid, $gid, '', $root, in_array('/bin/bash', $shells, true) ? '/bin/bash' : (reset($shells) ?: '/bin/sh')];
+    pftp_write($acc);
+    pftp_apply();
+    echo "FTP-аккаунт $login создан. Доступ ограничен каталогом $root.\n";
+    exit(0);
+}
+
+function pftp_passwd(): void
+{
+    $in = json_decode((string) stream_get_contents(STDIN), true) ?: [];
+    $acc = pftp_read();
+    $login = (string) ($in['login'] ?? '');
+    if (!isset($acc[$login])) {
+        fail('Аккаунт не найден');
+    }
+    $acc[$login][1] = pftp_check_pass((string) ($in['password'] ?? ''));
+    pftp_write($acc);
+    echo "Пароль для $login изменён.\n";
+    exit(0);
+}
+
+function pftp_delete(string $login): void
+{
+    $acc = pftp_read();
+    if (!isset($acc[$login])) {
+        fail('Аккаунт не найден');
+    }
+    unset($acc[$login]);
+    pftp_write($acc);
+    echo "FTP-аккаунт $login удалён. Файлы сайта не затронуты.\n";
+    exit(0);
+}
+
+/* ---------- Почта: состояние, очередь, список ящиков ---------- */
+
+function mail_info(): array
+{
+    $exim = which(['exim4', 'exim']);
+    $r = ['mta' => $exim ? 'exim' : (which(['postqueue']) ? 'postfix' : null), 'queue' => 0, 'frozen' => 0, 'lines' => [], 'mailboxes' => null, 'dovecot' => which(['doveadm']) !== null];
+    if ($exim) {
+        run([$exim, '-bpc'], $o);
+        $r['queue'] = (int) trim((string) $o);
+        if ($r['queue'] > 0) {
+            run([$exim, '-bp'], $o);
+            $r['frozen'] = substr_count((string) $o, '*** frozen ***');
+            $r['lines'] = array_slice(array_values(array_filter(explode("\n", (string) $o), 'strlen')), 0, 80);
+        }
+    } elseif ($r['mta'] === 'postfix') {
+        run(['postqueue', '-p'], $o);
+        $lines = array_values(array_filter(explode("\n", (string) $o), 'strlen'));
+        $r['queue'] = preg_match('/in (\d+) Request/', (string) end($lines), $m) ? (int) $m[1] : 0;
+        $r['lines'] = array_slice($lines, 0, 80);
+    }
+    if ($r['dovecot'] && run(['doveadm', 'user', '*'], $o) === 0) {
+        $r['mailboxes'] = array_slice(array_values(array_filter(array_map('trim', explode("\n", (string) $o)), function ($l) {
+            return (bool) preg_match('/^[^\s@]+@[^\s@]+$/', $l);
+        })), 0, 500);
+    }
+    return $r;
+}
+
+function mail_flush(): void
+{
+    $exim = which(['exim4', 'exim']);
+    $rc = $exim ? run([$exim, '-qff'], $out) : run(['postqueue', '-f'], $out);
+    echo trim((string) $out), "\nЗапущена повторная отправка писем из очереди.\n";
+    exit($rc === 0 ? 0 : 1);
+}
+
+function mail_clear_frozen(): void
+{
+    $exim = which(['exim4', 'exim']);
+    if (!$exim || !which(['exiqgrep'])) {
+        fail('Удаление замороженных писем доступно только для Exim.');
+    }
+    run(['exiqgrep', '-z', '-i'], $o);
+    $ids = array_values(array_filter(array_map('trim', explode("\n", (string) $o)), function ($i) {
+        return (bool) preg_match('/^[A-Za-z0-9\-]{16,30}$/', $i);
+    }));
+    if (!$ids) {
+        fail('Замороженных писем в очереди нет.');
+    }
+    foreach (array_chunk($ids, 200) as $chunk) {
+        run(array_merge([$exim, '-Mrm'], $chunk), $o);
+    }
+    echo 'Удалено замороженных писем: ', count($ids), ".\n";
+    exit(0);
+}
+
 /* ---------- Точка входа ---------- */
 
 $cmd = $argv[1] ?? '';
@@ -1308,6 +1776,62 @@ switch ($cmd) {
         break;
     case 'sec-apache-http2-off':
         sec_apache_http2_off();
+        break;
+    case 'backup-config':
+        backup_config_save();
+        break;
+    case 'backup-run':
+        backup_run();
+        break;
+    case 'backup-start':
+        run(['systemctl', 'start', '--no-block', 'dewiar-backup.service'], $o);
+        echo "Создание копии запущено в фоне. Обновите страницу через несколько минут.\n", $o;
+        break;
+    case 'backups':
+        echo json_encode(backups_list(), JSON_UNESCAPED_UNICODE);
+        break;
+    case 'backup-read':
+        readfile(backup_path((string) ($argv[2] ?? ''), (string) ($argv[3] ?? '')));
+        break;
+    case 'backup-delete':
+        if (!preg_match(SET_RE, (string) ($argv[2] ?? '')) || !is_dir(AUTO_DIR . '/' . $argv[2])) {
+            fail('Копия не найдена');
+        }
+        run(['rm', '-rf', AUTO_DIR . '/' . $argv[2]], $o);
+        echo "Копия удалена.\n";
+        break;
+    case 'db-restore':
+        db_restore((string) ($argv[2] ?? ''));
+        break;
+    case 'cron-list':
+        echo json_encode(cron_list(), JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        break;
+    case 'cron-add':
+        cron_add();
+        break;
+    case 'cron-delete':
+        cron_delete((string) ($argv[2] ?? ''));
+        break;
+    case 'ftp-info':
+        echo json_encode(pftp_info(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        break;
+    case 'ftp-add':
+        pftp_add();
+        break;
+    case 'ftp-passwd':
+        pftp_passwd();
+        break;
+    case 'ftp-delete':
+        pftp_delete((string) ($argv[2] ?? ''));
+        break;
+    case 'mail-info':
+        echo json_encode(mail_info(), JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        break;
+    case 'mail-flush':
+        mail_flush();
+        break;
+    case 'mail-clear-frozen':
+        mail_clear_frozen();
         break;
     case 'service-reload':
         service_reload((string) ($argv[2] ?? ''));

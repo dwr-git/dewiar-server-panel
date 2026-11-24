@@ -69,6 +69,13 @@ if ($page === 'api') {
         'db_dump' => ['db-dump', $arg],
         'dump_delete' => ['dump-delete', $arg],
         'site_delete' => ['site-delete', $arg],
+        'backup_start' => ['backup-start'],
+        'backup_delete' => ['backup-delete', $arg],
+        'db_restore' => ['db-restore', $arg],
+        'cron_delete' => ['cron-delete', $arg],
+        'ftp_delete' => ['ftp-delete', $arg],
+        'mail_flush' => ['mail-flush'],
+        'mail_clear_frozen' => ['mail-clear-frozen'],
         'sec_refresh' => ['sec-refresh'],
         'sec_upgrade' => ['sec-upgrade'],
         'sec_http2_off' => ['sec-http2-off'],
@@ -109,6 +116,24 @@ switch ($page) {
     case 'security':
         page_security();
         break;
+    case 'backups':
+        page_backups();
+        break;
+    case 'bdownload':
+        download_backup((string) ($_GET['id'] ?? ''), (string) ($_GET['f'] ?? ''));
+        break;
+    case 'cron':
+        page_cron();
+        break;
+    case 'ftp':
+        page_ftp();
+        break;
+    case 'mail':
+        page_mail();
+        break;
+    case 'dns':
+        page_dns();
+        break;
     case 'help':
         page_help();
         break;
@@ -141,8 +166,13 @@ function render_login(?string $error): void
 
 function layout(string $title, string $active, string $body, string $intro = ''): void
 {
-    $nav = ['overview' => ['Главная', 'gauge', 'teal'], 'domains' => ['Сайты и SSL', 'sites', 'blue'], 'databases' => ['Базы данных', 'db', 'violet'],
-        'services' => ['Службы и сервер', 'services', 'orange'], 'security' => ['Безопасность', 'shield', 'rose'], 'help' => ['Справка', 'help', 'sky']];
+    $groups = [
+        '' => ['overview' => ['Главная', 'gauge', 'teal']],
+        'Сайты' => ['domains' => ['Сайты и SSL', 'sites', 'blue'], 'dns' => ['DNS', 'dns', 'sky'], 'ftp' => ['FTP', 'ftp', 'amber']],
+        'Данные' => ['databases' => ['Базы данных', 'db', 'violet'], 'backups' => ['Резервные копии', 'backup', 'green']],
+        'Сервер' => ['services' => ['Службы', 'services', 'orange'], 'cron' => ['Планировщик', 'cron', 'blue'], 'mail' => ['Почта', 'mail', 'violet'], 'security' => ['Безопасность', 'shield', 'rose']],
+        'Помощь' => ['help' => ['Справка', 'help', 'sky']],
+    ];
     ?><!doctype html>
 <html lang="ru">
 <head>
@@ -157,16 +187,19 @@ function layout(string $title, string $active, string $body, string $intro = '')
 <aside class="side">
   <div class="brand"><span class="brand-mark">D</span> Dewiar Panel</div>
   <nav>
-    <?php foreach ($nav as $k => $n): ?>
-      <a href="?p=<?= $k ?>"<?= $k === $active ? ' class="on" aria-current="page"' : '' ?>><?= icon($n[1], $n[2], 24) ?><?= e($n[0]) ?></a>
+    <?php foreach ($groups as $g => $items): ?>
+      <?php if ($g !== ''): ?><div class="nav-group"><?= e($g) ?></div><?php endif; ?>
+      <?php foreach ($items as $k => $n): ?>
+        <a href="?p=<?= $k ?>"<?= $k === $active ? ' class="on" aria-current="page"' : '' ?>><?= icon($n[1], $n[2], 22) ?><?= e($n[0]) ?></a>
+      <?php endforeach; ?>
     <?php endforeach; ?>
   </nav>
-  <form method="post" action="?p=logout" class="logout">
+  <form method="post" action="?p=logout" class="user">
     <input type="hidden" name="csrf" value="<?= e($_SESSION['csrf']) ?>">
-    <span><?= e($_SESSION['user']) ?></span>
-    <button class="btn" type="submit">Выйти</button>
+    <span class="avatar" aria-hidden="true"><?= e(mb_strtoupper(mb_substr((string) $_SESSION['user'], 0, 1))) ?></span>
+    <span class="user-name"><?= e($_SESSION['user']) ?><small>версия <?= DSP_VERSION ?></small></span>
+    <button class="btn icon-btn" type="submit" title="Выйти" aria-label="Выйти"><?= icon('exit', 'rose', 20) ?></button>
   </form>
-  <div class="ver">версия <?= DSP_VERSION ?></div>
 </aside>
 <main>
   <h1><?= e($title) ?></h1>
@@ -226,6 +259,11 @@ function page_overview(): void
         ['?p=newsite', 'newsite', 'teal', 'Новый сайт', 'PHP, статика, прокси', 0, ''],
         ['?p=databases', 'db', 'violet', 'Базы данных', 'список и размеры', 0, ''],
         ['?p=databases', 'dump', 'sky', 'Дампы', 'копии баз', 0, ''],
+        ['?p=backups', 'backup', 'green', 'Резервные копии', 'по расписанию', 0, ''],
+        ['?p=dns', 'dns', 'sky', 'DNS', 'записи доменов', 0, ''],
+        ['?p=ftp', 'ftp', 'amber', 'FTP', 'доступ к файлам', 0, ''],
+        ['?p=mail', 'mail', 'violet', 'Почта', 'очередь и ящики', 0, ''],
+        ['?p=cron', 'cron', 'blue', 'Планировщик', 'задания cron', 0, ''],
         ['?p=services', 'services', 'orange', 'Службы', 'перезапуск и статус', $down, 'остановлено'],
         ['?p=services', 'server', 'amber', 'Сервер', 'перезагрузка', 0, ''],
         ['?p=security', 'shield', 'rose', 'Безопасность', 'уязвимости', $secBad + $secWarn, 'требуют внимания'],
@@ -532,6 +570,8 @@ function page_databases(): void
         foreach ($dumps['data'] as $d) {
             echo '<tr><td class="mono">' . e($d['file']) . '</td><td>' . date('d.m.Y H:i', (int) $d['time']) . '</td><td>' . e(fmt_bytes((float) $d['size'])) . '</td>'
                 . '<td class="right"><a class="btn" href="?p=download&amp;f=' . e(rawurlencode($d['file'])) . '">Скачать</a> '
+                . action_btn('', 'db_restore', 'dump:' . $d['file'], 'Восстановить', 'Восстановить базу из дампа',
+                    'Содержимое базы будет заменено данными из файла ' . $d['file'] . '. Текущее состояние перед этим сохранится отдельным дампом.') . ' '
                 . action_btn('', 'dump_delete', $d['file'], 'Удалить', 'Удалить дамп', 'Файл ' . $d['file'] . ' будет удалён с сервера. Восстановить его будет нельзя.') . '</td></tr>';
         }
         echo '</tbody></table>';
@@ -596,7 +636,7 @@ function page_help(): void
     ?>
 <nav class="toc">
   <a href="#overview">Обзор и графики</a><a href="#ssl">Сайты и SSL</a><a href="#wildcard">Wildcard-сертификаты</a><a href="#newsite">Новый сайт</a>
-  <a href="#editor">Редактор настроек</a><a href="#db">Базы данных</a><a href="#services">Службы и сервер</a><a href="#vuln">Уязвимости и обновления</a><a href="#security">Доступ к панели</a><a href="#trouble">Если что-то не работает</a>
+  <a href="#editor">Редактор настроек</a><a href="#db">Базы данных</a><a href="#backups">Резервные копии</a><a href="#cron">Планировщик</a><a href="#ftp">FTP</a><a href="#mail">Почта</a><a href="#dnshelp">DNS</a><a href="#services">Службы и сервер</a><a href="#vuln">Уязвимости и обновления</a><a href="#security">Доступ к панели</a><a href="#trouble">Если что-то не работает</a>
 </nav>
 
 <section class="panel help" id="overview"><h2>Обзор и графики</h2>
@@ -669,8 +709,48 @@ function page_help(): void
   <li>Старые дампы панель сама не удаляет. Следите за местом на диске.</li>
 </ul>
 <h3>Как восстановить базу из дампа</h3>
-<p>Пока это делается по SSH. Команда заменяет содержимое базы данными из дампа:</p>
-<pre class="code">zcat /var/backups/dewiar-panel/ИМЯ_ФАЙЛА.sql.gz | mysql ИМЯ_БАЗЫ</pre></section>
+<p>Нажмите «Восстановить» напротив дампа. Содержимое базы заменяется данными из файла. Перед этим панель сама сохраняет текущее состояние базы отдельным дампом, так что действие можно отменить.</p></section>
+
+<section class="panel help" id="backups"><h2>Резервные копии</h2>
+<ul>
+  <li>Включите расписание, выберите час запуска и срок хранения. Копия создаётся раз в сутки: архив файлов каждого сайта и дамп каждой базы.</li>
+  <li>«Создать копию сейчас» запускает создание в фоне. Для больших сайтов это занимает несколько минут, обновите страницу позже.</li>
+  <li>Копии хранятся на этом же сервере в <span class="mono">/var/backups/dewiar-panel/auto</span>. <b>Если откажет диск, пропадут и они.</b> Важные копии скачивайте к себе.</li>
+  <li>Базу можно восстановить кнопкой. Файлы сайта восстанавливаются вручную: скачайте архив и распакуйте его в каталог сайта.</li>
+  <li>Копии старше срока хранения удаляются автоматически. Если на диске меньше 5% места, новая копия не создаётся.</li>
+</ul></section>
+
+<section class="panel help" id="cron"><h2>Планировщик</h2>
+<ul>
+  <li>Задание состоит из расписания, пользователя и команды. Расписание записывается пятью полями cron: минута, час, день месяца, месяц, день недели.</li>
+  <li>Примеры: <span class="mono">*/5 * * * *</span> каждые 5 минут, <span class="mono">0 3 * * *</span> каждый день в 03:00, <span class="mono">0 9 * * 1</span> по понедельникам в 09:00.</li>
+  <li>Запускайте задания сайта от имени владельца его файлов, а не от root.</li>
+  <li>Задания, созданные не в панели (в том числе оставшиеся от FastPanel), показаны списком только для просмотра.</li>
+</ul></section>
+
+<section class="panel help" id="ftp"><h2>FTP</h2>
+<ul>
+  <li>Аккаунт привязывается к одному сайту и видит только его каталог.</li>
+  <li>Поддерживается сервер ProFTPD. Аккаунты, созданные раньше в FastPanel, продолжают работать, но в этом списке не показываются.</li>
+  <li>Файлы, загруженные по FTP, получают того же владельца, что и остальные файлы сайта.</li>
+  <li>FTP передаёт пароль открытым текстом. Если ваш клиент умеет, включайте в нём шифрование (FTPS).</li>
+</ul></section>
+
+<section class="panel help" id="mail"><h2>Почта</h2>
+<ul>
+  <li>Страница показывает почтовый сервер, очередь писем и список ящиков.</li>
+  <li><b>Очередь</b> — письма, которые сервер ещё не смог отправить. Несколько писем в очереди — норма. Сотни писем означают проблему с доставкой или рассылку спама со взломанного сайта.</li>
+  <li>«Отправить очередь» запускает новую попытку доставки. «Удалить замороженные» убирает письма, которые сервер отчаялся доставить.</li>
+  <li>Создание и удаление ящиков из панели пока недоступно. Существующие ящики работают как раньше.</li>
+</ul></section>
+
+<section class="panel help" id="dnshelp"><h2>DNS</h2>
+<ul>
+  <li>Страница показывает, как ваши домены видны из интернета: адрес, серверы имён, почтовые записи.</li>
+  <li>Метка «Другой адрес» означает, что домен указывает не туда же, куда большинство ваших доменов. Сертификат для такого домена не выпустится.</li>
+  <li>SPF и DMARC нужны, чтобы письма с домена не попадали в спам. «Нет» означает, что запись стоит добавить у регистратора.</li>
+  <li>Сами записи меняются у регистратора домена. Панель их только проверяет. Данные обновляются раз в 15 минут или кнопкой.</li>
+</ul></section>
 
 <section class="panel help" id="services"><h2>Службы и сервер</h2>
 <ul>
@@ -704,6 +784,7 @@ function page_help(): void
   <li><b>Панель не открывается.</b> По SSH: <span class="mono">systemctl status dewiar-panel</span>, журнал: <span class="mono">journalctl -u dewiar-panel -n 50</span>.</li>
   <li><b>Сертификат не выпускается.</b> Причина написана в журнале после нажатия кнопки. Чаще всего домен не указывает на сервер или закрыт порт 80.</li>
   <li><b>Графики пустые.</b> Проверьте таймер: <span class="mono">systemctl status dewiar-metrics.timer</span>.</li>
+  <li><b>Копии не создаются.</b> Проверьте таймер: <span class="mono">systemctl status dewiar-backup.timer</span>, журнал: <span class="mono">journalctl -u dewiar-backup -n 50</span>.</li>
   <li><b>Не видны базы данных.</b> Пользователь root должен входить в MySQL без пароля или через файл <span class="mono">/root/.my.cnf</span>.</li>
   <li><b>Сертификат вернулся к старому.</b> Возможно, его перезаписала служба FastPanel. Остановите её.</li>
 </ul>
@@ -834,4 +915,341 @@ function page_security(): void
     }
     echo '</section><p class="muted">Сведения об уязвимостях актуальны на 24.11.2026 и обновляются вместе с панелью.</p>';
     layout('Безопасность', 'security', (string) ob_get_clean(), 'Версии nginx, Apache и PHP, сверка с ноябрьскими исправлениями 2026 года и доступные обновления. <a href="?p=help#vuln">Что означают состояния и кнопки</a>');
+}
+
+/* ---------- Общая обработка форм ---------- */
+
+function form_result(?array $result): string
+{
+    if (!$result) {
+        return '';
+    }
+    cache_clear();
+    return '<section class="panel"><p class="' . ($result[0] === 0 ? 'ok-msg' : 'alert') . '">' . ($result[0] === 0 ? 'Выполнено.' : 'Не выполнено.') . '</p><pre class="code">' . e($result[1]) . '</pre></section>';
+}
+
+function form_post(): ?string
+{
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        return null;
+    }
+    return csrf_ok() ? (string) ($_POST['op'] ?? '') : '!csrf';
+}
+
+function csrf_field(): string
+{
+    return '<input type="hidden" name="csrf" value="' . e($_SESSION['csrf']) . '">';
+}
+
+/* ---------- Резервные копии ---------- */
+
+function page_backups(): void
+{
+    $result = null;
+    $op = form_post();
+    if ($op === '!csrf') {
+        $result = [1, 'Сессия устарела, обновите страницу'];
+    } elseif ($op === 'config') {
+        $result = helper(['backup-config'], (string) json_encode(['enabled' => !empty($_POST['enabled']), 'hour' => (int) ($_POST['hour'] ?? 3),
+            'keep_days' => (int) ($_POST['keep_days'] ?? 7), 'files' => !empty($_POST['files']), 'db' => !empty($_POST['db'])]));
+    }
+    $res = helper_json(['backups']);
+    ob_start();
+    echo form_result($result);
+    if (isset($res['error'])) {
+        echo '<p class="alert">' . nl2br(e($res['error'])) . '</p>';
+        layout('Резервные копии', 'backups', (string) ob_get_clean());
+        return;
+    }
+    $c = $res['data']['cfg'];
+    echo '<form class="panel form" method="post" action="?p=backups">' . csrf_field() . '<input type="hidden" name="op" value="config"><h2>Расписание</h2>';
+    echo '<label class="check"><input type="checkbox" name="enabled" value="1"' . ($c['enabled'] ? ' checked' : '') . '> Создавать копию каждый день</label>';
+    echo '<div class="inline"><label>Час запуска <select name="hour">';
+    for ($h = 0; $h < 24; $h++) {
+        echo '<option value="' . $h . '"' . ($h === (int) $c['hour'] ? ' selected' : '') . '>' . sprintf('%02d:10', $h) . '</option>';
+    }
+    echo '</select></label><label>Хранить, дней <input type="number" name="keep_days" min="1" max="90" value="' . (int) $c['keep_days'] . '" style="width:90px"></label></div>';
+    echo '<label class="check"><input type="checkbox" name="files" value="1"' . ($c['files'] ? ' checked' : '') . '> Файлы сайтов</label>';
+    echo '<label class="check"><input type="checkbox" name="db" value="1"' . ($c['db'] ? ' checked' : '') . '> Базы данных</label>';
+    echo '<div class="form-foot"><span class="muted">Свободно на диске: ' . e(fmt_bytes((float) $res['data']['free'])) . '</span><button class="btn primary" type="submit">Сохранить расписание</button></div></form>';
+
+    echo '<div class="toolbar"><h2 class="grow">Готовые копии</h2>'
+        . ($res['data']['running'] ? '<span class="badge warn">Копия создаётся</span>' : action_btn('primary', 'backup_start', '', 'Создать копию сейчас', 'Создать резервную копию',
+            'Копия файлов сайтов и баз будет создаваться в фоне. Для больших сайтов это занимает несколько минут.')) . '</div>';
+    if (!$res['data']['sets']) {
+        echo '<p class="muted">Копий пока нет.</p>';
+    }
+    foreach ($res['data']['sets'] as $set) {
+        $state = !$set['done'] ? ['warn', 'Создаётся'] : ($set['errors'] ? ['bad', 'С ошибками: ' . $set['errors']] : ['ok', 'Готова']);
+        echo '<details class="panel"><summary><b>' . date('d.m.Y H:i', (int) $set['time']) . '</b> <span class="muted">' . count($set['files']) . ' файлов, ' . e(fmt_bytes((float) $set['size']))
+            . '</span> <span class="badge ' . $state[0] . '">' . e($state[1]) . '</span></summary><table><tbody>';
+        foreach ($set['files'] as $f) {
+            $isDb = strpos($f['name'], 'db-') === 0;
+            echo '<tr><td>' . ($isDb ? 'База' : 'Сайт') . '</td><td class="mono">' . e($f['name']) . '</td><td>' . e(fmt_bytes((float) $f['size'])) . '</td><td class="right">'
+                . '<a class="btn" href="?p=bdownload&amp;id=' . e($set['id']) . '&amp;f=' . e(rawurlencode($f['name'])) . '">Скачать</a>'
+                . ($isDb ? ' ' . action_btn('', 'db_restore', 'auto:' . $set['id'] . '/' . $f['name'], 'Восстановить', 'Восстановить базу из копии',
+                    'Содержимое базы будет заменено данными из копии от ' . date('d.m.Y H:i', (int) $set['time']) . '. Текущее состояние перед этим сохранится отдельным дампом.') : '') . '</td></tr>';
+        }
+        echo '</tbody></table><p style="margin-top:14px">' . action_btn('danger', 'backup_delete', $set['id'], 'Удалить копию', 'Удалить резервную копию',
+            'Копия от ' . date('d.m.Y H:i', (int) $set['time']) . ' будет удалена с сервера. Восстановить её будет нельзя.') . '</p></details>';
+    }
+    layout('Резервные копии', 'backups', (string) ob_get_clean(), 'Ежедневные копии файлов сайтов и баз данных. Копии лежат на этом же сервере, важные скачивайте к себе. <a href="?p=help#backups">Как это работает</a>');
+}
+
+function download_backup(string $id, string $file): void
+{
+    $res = helper_json(['backups']);
+    foreach ($res['data']['sets'] ?? [] as $set) {
+        foreach ($set['id'] === $id ? $set['files'] : [] as $f) {
+            if ($f['name'] === $file) {
+                session_write_close();
+                @set_time_limit(0);
+                header('Content-Type: application/gzip');
+                header('Content-Length: ' . (int) $f['size']);
+                header('Content-Disposition: attachment; filename="' . $id . '-' . $file . '"');
+                helper_stream(['backup-read', $id, $file]);
+                return;
+            }
+        }
+    }
+    http_response_code(404);
+    layout('Файл не найден', 'backups', '<p class="alert">Такого файла в резервных копиях нет.</p>');
+}
+
+/* ---------- Планировщик ---------- */
+
+function page_cron(): void
+{
+    $result = null;
+    $op = form_post();
+    if ($op === '!csrf') {
+        $result = [1, 'Сессия устарела, обновите страницу'];
+    } elseif ($op === 'add') {
+        $result = helper(['cron-add'], (string) json_encode(['schedule' => (string) ($_POST['schedule'] ?? ''), 'user' => (string) ($_POST['user'] ?? ''),
+            'command' => (string) ($_POST['command'] ?? ''), 'comment' => (string) ($_POST['comment'] ?? '')]));
+    }
+    $res = helper_json(['cron-list']);
+    ob_start();
+    echo form_result($result);
+    if (isset($res['error'])) {
+        echo '<p class="alert">' . nl2br(e($res['error'])) . '</p>';
+        layout('Планировщик', 'cron', (string) ob_get_clean());
+        return;
+    }
+    $keep = $result && $result[0] !== 0;
+    echo '<form class="panel form wide" method="post" action="?p=cron">' . csrf_field() . '<input type="hidden" name="op" value="add"><h2>Новое задание</h2>';
+    echo '<div class="inline"><label>Расписание<input name="schedule" id="cron-schedule" required placeholder="*/5 * * * *" class="mono" value="' . e($keep ? ($_POST['schedule'] ?? '') : '') . '"></label>'
+        . '<label>Готовые варианты<select data-fill="cron-schedule"><option value="">выбрать…</option><option value="*/5 * * * *">каждые 5 минут</option><option value="0 * * * *">каждый час</option>'
+        . '<option value="0 3 * * *">каждый день в 03:00</option><option value="0 9 * * 1">по понедельникам в 09:00</option><option value="0 0 1 * *">первого числа месяца</option></select></label>'
+        . '<label>От имени<select name="user">';
+    foreach ($res['data']['users'] as $u) {
+        echo '<option>' . e($u) . '</option>';
+    }
+    echo '</select></label></div>';
+    echo '<label>Команда<input name="command" required class="mono" placeholder="/usr/bin/php /var/www/site/cron.php" value="' . e($keep ? ($_POST['command'] ?? '') : '') . '"></label>';
+    echo '<label>Пометка для себя<input name="comment" maxlength="120" placeholder="Например: рассылка писем" value="' . e($keep ? ($_POST['comment'] ?? '') : '') . '"></label>';
+    echo '<div class="form-foot"><span class="muted">Пять полей: минута, час, день месяца, месяц, день недели.</span><button class="btn primary" type="submit">Добавить задание</button></div></form>';
+
+    echo '<section class="panel"><h2>Задания панели</h2>';
+    if (!$res['data']['own']) {
+        echo '<p class="muted">Заданий пока нет.</p>';
+    } else {
+        echo '<table><thead><tr><th>Расписание</th><th>От имени</th><th>Команда</th><th></th></tr></thead><tbody>';
+        foreach ($res['data']['own'] as $j) {
+            echo '<tr><td class="mono">' . e($j['schedule']) . '</td><td>' . e($j['user']) . '</td><td><span class="mono">' . e($j['command']) . '</span>'
+                . ($j['comment'] !== '' ? '<div class="muted">' . e($j['comment']) . '</div>' : '') . '</td><td class="right">'
+                . action_btn('', 'cron_delete', $j['id'], 'Удалить', 'Удалить задание', 'Задание «' . $j['command'] . '» больше не будет запускаться.') . '</td></tr>';
+        }
+        echo '</tbody></table>';
+    }
+    echo '</section>';
+    if ($res['data']['other']) {
+        echo '<details class="panel"><summary><b>Другие задания на сервере</b> <span class="muted">' . count($res['data']['other']) . ', только просмотр</span></summary><table><tbody>';
+        foreach ($res['data']['other'] as $o) {
+            echo '<tr><td class="mono muted">' . e($o['source']) . '</td><td class="mono">' . e($o['line']) . '</td></tr>';
+        }
+        echo '</tbody></table></details>';
+    }
+    layout('Планировщик', 'cron', (string) ob_get_clean(), 'Задания, которые сервер выполняет по расписанию: обновление данных, рассылки, очистка. <a href="?p=help#cron">Как записывать расписание</a>');
+}
+
+/* ---------- FTP ---------- */
+
+function page_ftp(): void
+{
+    $result = null;
+    $op = form_post();
+    if ($op === '!csrf') {
+        $result = [1, 'Сессия устарела, обновите страницу'];
+    } elseif ($op === 'add') {
+        $result = helper(['ftp-add'], (string) json_encode(['login' => (string) ($_POST['login'] ?? ''), 'password' => (string) ($_POST['password'] ?? ''), 'domain' => (string) ($_POST['domain'] ?? '')]));
+    } elseif ($op === 'passwd') {
+        $result = helper(['ftp-passwd'], (string) json_encode(['login' => (string) ($_POST['login'] ?? ''), 'password' => (string) ($_POST['password'] ?? '')]));
+    }
+    $res = helper_json(['ftp-info']);
+    ob_start();
+    echo form_result($result);
+    if (isset($res['error'])) {
+        echo '<p class="alert">' . nl2br(e($res['error'])) . '</p>';
+        layout('FTP', 'ftp', (string) ob_get_clean());
+        return;
+    }
+    $d = $res['data'];
+    if ($d['server'] !== 'proftpd') {
+        echo '<section class="panel"><p>' . ($d['server'] ? 'На сервере установлен FTP-сервер <b>' . e($d['server']) . '</b>. Управление аккаунтами из панели пока поддерживается только для ProFTPD.'
+            : 'FTP-сервер на этом сервере не найден. Файлы можно загружать по SFTP, он работает через SSH и не требует настройки.') . '</p></section>';
+    } elseif (!$d['confd']) {
+        echo '<p class="alert">В настройках ProFTPD не подключён каталог /etc/proftpd/conf.d. Добавьте в proftpd.conf строку <code>Include /etc/proftpd/conf.d/</code> и обновите страницу.</p>';
+    } else {
+        echo '<form class="panel form" method="post" action="?p=ftp" autocomplete="off">' . csrf_field() . '<input type="hidden" name="op" value="add"><h2>Новый аккаунт</h2>';
+        echo '<label>Логин<input name="login" required pattern="[a-z][a-z0-9_\-]{2,31}" placeholder="site_ftp"></label>';
+        echo '<label>Пароль<input name="password" type="password" required minlength="10" autocomplete="new-password"><span class="muted">Не короче 10 символов.</span></label>';
+        echo '<label>Сайт<select name="domain">';
+        foreach ($d['sites'] as $s) {
+            echo '<option value="' . e($s['domain']) . '">' . e($s['domain']) . '</option>';
+        }
+        echo '</select><span class="muted">Аккаунт будет видеть только каталог этого сайта.</span></label><button class="btn primary" type="submit">Создать аккаунт</button></form>';
+        echo '<section class="panel"><h2>Аккаунты панели</h2>';
+        if (!$d['accounts']) {
+            echo '<p class="muted">Аккаунтов пока нет.</p>';
+        } else {
+            echo '<table><thead><tr><th>Логин</th><th>Каталог</th><th>Новый пароль</th><th></th></tr></thead><tbody>';
+            foreach ($d['accounts'] as $a) {
+                echo '<tr><td><b>' . e($a['login']) . '</b></td><td class="mono">' . e($a['home']) . '</td><td><form method="post" action="?p=ftp" class="inline" style="margin:0" autocomplete="off">' . csrf_field()
+                    . '<input type="hidden" name="op" value="passwd"><input type="hidden" name="login" value="' . e($a['login']) . '"><input name="password" type="password" minlength="10" required aria-label="Новый пароль" autocomplete="new-password" style="width:170px">'
+                    . '<button class="btn" type="submit">Сменить</button></form></td><td class="right">'
+                    . action_btn('', 'ftp_delete', $a['login'], 'Удалить', 'Удалить FTP-аккаунт', 'Аккаунт ' . $a['login'] . ' потеряет доступ. Файлы сайта не удаляются.') . '</td></tr>';
+            }
+            echo '</tbody></table>';
+        }
+        echo '</section>';
+    }
+    layout('FTP', 'ftp', (string) ob_get_clean(), 'Доступ к файлам сайта по FTP. Каждый аккаунт привязан к одному сайту. <a href="?p=help#ftp">Подробнее</a>');
+}
+
+/* ---------- Почта ---------- */
+
+function page_mail(): void
+{
+    $res = helper_json(['mail-info']);
+    ob_start();
+    if (isset($res['error'])) {
+        echo '<p class="alert">' . nl2br(e($res['error'])) . '</p>';
+        layout('Почта', 'mail', (string) ob_get_clean());
+        return;
+    }
+    $d = $res['data'];
+    if (!$d['mta']) {
+        echo '<section class="panel"><p>Почтовый сервер (Exim или Postfix) на этом сервере не найден.</p></section>';
+        layout('Почта', 'mail', (string) ob_get_clean());
+        return;
+    }
+    $q = (int) $d['queue'];
+    $qs = $q >= 200 ? ['bad', 'Очередь переполнена'] : ($q >= 30 ? ['warn', 'Очередь растёт'] : ['ok', 'В норме']);
+    echo '<div class="stats"><div class="stat"><div class="stat-label">Почтовый сервер</div><div class="stat-value">' . ($d['mta'] === 'exim' ? 'Exim' : 'Postfix') . ($d['dovecot'] ? ' + Dovecot' : '') . '</div></div>'
+        . '<div class="stat"><div class="stat-label">Писем в очереди</div><div class="stat-value">' . $q . '</div><span class="badge ' . $qs[0] . '">' . $qs[1] . '</span></div>'
+        . '<div class="stat"><div class="stat-label">Замороженных</div><div class="stat-value">' . (int) $d['frozen'] . '</div><div class="muted">сервер не смог их доставить</div></div>'
+        . '<div class="stat"><div class="stat-label">Почтовых ящиков</div><div class="stat-value">' . ($d['mailboxes'] === null ? '—' : count($d['mailboxes'])) . '</div></div></div>';
+    echo '<section class="panel"><h2>Очередь писем</h2>';
+    if ($q === 0) {
+        echo '<p class="muted">Очередь пуста, все письма отправлены.</p>';
+    } else {
+        echo '<pre class="code">' . e(implode("\n", $d['lines'])) . '</pre><p style="margin-top:16px">'
+            . action_btn('primary', 'mail_flush', '', 'Отправить очередь', 'Отправить очередь', 'Сервер заново попробует доставить все письма из очереди.');
+        if ($d['frozen'] > 0) {
+            echo ' ' . action_btn('', 'mail_clear_frozen', '', 'Удалить замороженные', 'Удалить замороженные письма', 'Письма, которые сервер не смог доставить (' . (int) $d['frozen'] . '), будут удалены из очереди без возможности восстановления.');
+        }
+        echo '</p>';
+    }
+    echo '</section><section class="panel"><h2>Почтовые ящики</h2>';
+    if ($d['mailboxes'] === null) {
+        echo '<p class="muted">Список ящиков получить не удалось: Dovecot не установлен или не отдаёт список пользователей.</p>';
+    } elseif (!$d['mailboxes']) {
+        echo '<p class="muted">Ящиков нет.</p>';
+    } else {
+        echo '<div class="chips big">';
+        foreach ($d['mailboxes'] as $m) {
+            echo '<span>' . e($m) . '</span>';
+        }
+        echo '</div>';
+    }
+    echo '<p class="muted" style="margin-top:14px">Создание, удаление ящиков и смена паролей появятся в следующих версиях. Существующие ящики работают как раньше.</p></section>';
+    layout('Почта', 'mail', (string) ob_get_clean(), 'Состояние почтового сервера, очередь писем и список ящиков. Записи SPF и DMARC проверяются на странице <a href="?p=dns">DNS</a>. <a href="?p=help#mail">Подробнее</a>');
+}
+
+/* ---------- DNS ---------- */
+
+function dns_lookup(string $domain): array
+{
+    $pick = function (int $type, string $key) use ($domain): array {
+        $out = [];
+        foreach (@dns_get_record($domain, $type) ?: [] as $r) {
+            if (isset($r[$key])) {
+                $out[] = (string) $r[$key];
+            }
+        }
+        sort($out);
+        return $out;
+    };
+    $spf = false;
+    foreach ($pick(DNS_TXT, 'txt') as $t) {
+        $spf = $spf || stripos($t, 'v=spf1') === 0;
+    }
+    $dmarc = false;
+    foreach (@dns_get_record('_dmarc.' . $domain, DNS_TXT) ?: [] as $r) {
+        $dmarc = $dmarc || stripos((string) ($r['txt'] ?? ''), 'v=DMARC1') === 0;
+    }
+    return ['a' => $pick(DNS_A, 'ip'), 'ns' => $pick(DNS_NS, 'target'), 'mx' => $pick(DNS_MX, 'target'), 'spf' => $spf, 'dmarc' => $dmarc];
+}
+
+function page_dns(): void
+{
+    $sites = helper_json(['sites']);
+    ob_start();
+    if (isset($sites['error'])) {
+        echo '<p class="alert">' . nl2br(e($sites['error'])) . '</p>';
+        layout('DNS', 'dns', (string) ob_get_clean());
+        return;
+    }
+    $file = cfg()['data_dir'] . '/cache-dns.json';
+    if (isset($_GET['refresh'])) {
+        @unlink($file);
+    }
+    $data = (is_file($file) && time() - filemtime($file) < 900) ? json_decode((string) file_get_contents($file), true) : null;
+    if (!is_array($data)) {
+        @set_time_limit(180);
+        session_write_close();
+        $data = [];
+        foreach ($sites['data'] as $s) {
+            $data[$s['domain']] = dns_lookup($s['domain']);
+        }
+        @file_put_contents($file, json_encode($data), LOCK_EX);
+    }
+    $count = [];
+    foreach ($data as $r) {
+        foreach ($r['a'] as $ip) {
+            $count[$ip] = ($count[$ip] ?? 0) + 1;
+        }
+    }
+    arsort($count);
+    $main = (string) (array_key_first($count) ?? '');
+    echo '<div class="toolbar"><span class="muted grow">Проверено: ' . date('d.m.Y H:i', is_file($file) ? (int) filemtime($file) : time())
+        . ($main !== '' ? '. Основной адрес ваших доменов: <b>' . e($main) . '</b>' : '') . '</span><a class="btn" href="?p=dns&amp;refresh=1">Проверить заново</a></div>';
+    echo '<section class="panel"><table><thead><tr><th>Домен</th><th>Адрес (A)</th><th>Серверы имён</th><th>Почта (MX)</th><th>SPF</th><th>DMARC</th></tr></thead><tbody>';
+    foreach ($data as $domain => $r) {
+        if (!$r['a']) {
+            $st = '<span class="badge bad">Не найден</span>';
+        } elseif ($main !== '' && !in_array($main, $r['a'], true)) {
+            $st = '<span class="mono">' . e(implode(', ', $r['a'])) . '</span> <span class="badge warn">Другой адрес</span>';
+        } else {
+            $st = '<span class="mono">' . e(implode(', ', $r['a'])) . '</span>';
+        }
+        $yn = function (bool $v, bool $need): string {
+            return $v ? '<span class="badge ok">Есть</span>' : ($need ? '<span class="badge warn">Нет</span>' : '<span class="muted">—</span>');
+        };
+        echo '<tr><td><b>' . e($domain) . '</b></td><td>' . $st . '</td><td class="mono">' . e(implode(', ', array_slice($r['ns'], 0, 2)) ?: '—') . '</td><td class="mono">'
+            . e(implode(', ', array_slice($r['mx'], 0, 2)) ?: '—') . '</td><td>' . $yn($r['spf'], (bool) $r['mx']) . '</td><td>' . $yn($r['dmarc'], (bool) $r['mx']) . '</td></tr>';
+    }
+    echo '</tbody></table></section>';
+    layout('DNS', 'dns', (string) ob_get_clean(), 'Как ваши домены видны из интернета. Сами записи меняются у регистратора домена, панель их проверяет. <a href="?p=help#dnshelp">Что означают столбцы</a>');
 }

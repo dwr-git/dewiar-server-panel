@@ -60,6 +60,14 @@
     });
   }
 
+  /* Готовые варианты, подставляемые в поле ввода */
+  document.querySelectorAll('select[data-fill]').forEach(function (sel) {
+    sel.addEventListener('change', function () {
+      var t = document.getElementById(sel.dataset.fill);
+      if (t && sel.value) t.value = sel.value;
+    });
+  });
+
   /* Поиск по карточкам */
   var q = document.getElementById('q');
   if (q) {

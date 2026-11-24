@@ -138,6 +138,16 @@ AccuracySec=5s
 [Install]
 WantedBy=timers.target
 EOF
+cat > /etc/systemd/system/dewiar-backup.service <<EOF
+[Unit]
+Description=Dewiar Server Panel: резервная копия сайтов и баз
+
+[Service]
+Type=oneshot
+Nice=10
+IOSchedulingClass=idle
+ExecStart=/usr/local/sbin/dewiar-helper backup-run
+EOF
 systemctl daemon-reload
 systemctl enable --now dewiar-metrics.timer >/dev/null 2>&1
 systemctl enable dewiar-panel >/dev/null 2>&1
