@@ -167,7 +167,7 @@ function render_login(?string $error): void
 function layout(string $title, string $active, string $body, string $intro = ''): void
 {
     $groups = [
-        '' => ['overview' => ['Главная', 'gauge', 'teal']],
+        '' => ['overview' => ['Главная', 'home', 'teal']],
         'Сайты' => ['domains' => ['Сайты и SSL', 'sites', 'blue'], 'dns' => ['DNS', 'dns', 'sky'], 'ftp' => ['FTP', 'ftp', 'amber']],
         'Данные' => ['databases' => ['Базы данных', 'db', 'violet'], 'backups' => ['Резервные копии', 'backup', 'green']],
         'Сервер' => ['services' => ['Службы', 'services', 'orange'], 'cron' => ['Планировщик', 'cron', 'blue'], 'mail' => ['Почта', 'mail', 'violet'], 'security' => ['Безопасность', 'shield', 'rose']],
